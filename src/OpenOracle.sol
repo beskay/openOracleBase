@@ -40,14 +40,6 @@ contract OpenOracle is ReentrancyGuard {
     struct ReportStatus {uint256 currentAmount1; uint256 currentAmount2; uint256 price; address payable currentReporter; uint48 reportTimestamp; uint48 settlementTimestamp; address payable initialReporter; uint48 lastReportOppoTime; bool disputeOccurred; bool isDistributed;}
     struct CreateReportParams {uint256 exactToken1Report; uint256 escalationHalt; uint256 settlerReward; address token1Address; uint48 settlementTime; uint24 disputeDelay; uint24 protocolFee; address token2Address; uint32 callbackGasLimit; uint24 feePercentage; uint16 multiplier; bool timeType; bool trackDisputes; bool keepFee; address callbackContract; bytes4 callbackSelector; address protocolFeeRecipient;}
 
-    event ReportInstanceCreated(uint256 indexed reportId,address indexed token1Address,address indexed token2Address,uint256 feePercentage,uint256 multiplier,uint256 exactToken1Report,uint256 ethFee,address creator,uint256 settlementTime,uint256 escalationHalt,uint256 disputeDelay,uint256 protocolFee,uint256 settlerReward,bool timeType,address callbackContract,bytes4 callbackSelector,bool trackDisputes,uint256 callbackGasLimit,bool keepFee,bytes32 stateHash,uint256 blockTimestamp);
-    event InitialReportSubmitted(uint256 indexed reportId,address reporter,uint256 amount1,uint256 amount2,address indexed token1Address,address indexed token2Address,uint256 swapFee,uint256 protocolFee,uint256 settlementTime,uint256 disputeDelay,uint256 escalationHalt,bool timeType,address callbackContract,bytes4 callbackSelector,bool trackDisputes,uint256 callbackGasLimit,bytes32 stateHash,uint256 blockTimestamp);
-    event ReportDisputed(uint256 indexed reportId,address disputer,uint256 newAmount1,uint256 newAmount2,address indexed token1Address,address indexed token2Address,uint256 swapFee,uint256 protocolFee,uint256 settlementTime,uint256 disputeDelay,uint256 escalationHalt,bool timeType,address callbackContract,bytes4 callbackSelector,bool trackDisputes,uint256 callbackGasLimit,bytes32 stateHash,uint256 blockTimestamp);
-
-    event ReportSettled(uint256 indexed reportId, uint256 price, uint256 settlementTimestamp, uint256 blockTimestamp);
-
-    event SettlementCallbackExecuted(uint256 indexed reportId, address indexed callbackContract, bool success);
-
     constructor() ReentrancyGuard() {}
 
     function getProtocolFees(address tokenToGet) external nonReentrant returns (uint256) {
@@ -85,7 +77,6 @@ contract OpenOracle is ReentrancyGuard {
         uint256 reporterReward = meta.fee;
         status.isDistributed = true;
         status.settlementTimestamp = meta.timeType ? uint48(block.timestamp) : _getBlockNumber();
-        emit ReportSettled(reportId, status.price, status.settlementTimestamp, block.timestamp);
         extraReportData storage extra = extraData[reportId];
         _transferTokens(meta.token1, address(this), status.currentReporter, status.currentAmount1);
         _transferTokens(meta.token2, address(this), status.currentReporter, status.currentAmount2);
@@ -94,7 +85,6 @@ contract OpenOracle is ReentrancyGuard {
                 abi.encodeWithSelector(extra.callbackSelector, reportId, status.price, status.settlementTimestamp, meta.token1, meta.token2);
             (bool success,) = extra.callbackContract.call{gas: extra.callbackGasLimit}(callbackData);
             if (gasleft() < extra.callbackGasLimit / 63) revert InvalidGasLimit();
-            emit SettlementCallbackExecuted(reportId, extra.callbackContract, success);
         }
         if (status.disputeOccurred) {
             if (extraData[reportId].keepFee) {
@@ -198,29 +188,6 @@ contract OpenOracle is ReentrancyGuard {
             )
         );
         extra.stateHash = stateHash;
-        emit ReportInstanceCreated(
-            reportId,
-            params.token1Address,
-            params.token2Address,
-            params.feePercentage,
-            params.multiplier,
-            params.exactToken1Report,
-            msg.value,
-            msg.sender,
-            params.settlementTime,
-            params.escalationHalt,
-            params.disputeDelay,
-            params.protocolFee,
-            params.settlerReward,
-            params.timeType,
-            params.callbackContract,
-            params.callbackSelector,
-            params.trackDisputes,
-            params.callbackGasLimit,
-            params.keepFee,
-            stateHash,
-            block.timestamp
-        );
         return reportId;
     }
 
@@ -263,26 +230,6 @@ contract OpenOracle is ReentrancyGuard {
             disputeHistory[reportId][0].reportTimestamp = status.reportTimestamp;
             extra.numReports = 1;
         }
-        emit InitialReportSubmitted(
-            reportId,
-            reporter,
-            amount1,
-            amount2,
-            meta.token1,
-            meta.token2,
-            meta.feePercentage,
-            meta.protocolFee,
-            meta.settlementTime,
-            meta.disputeDelay,
-            meta.escalationHalt,
-            meta.timeType,
-            extra.callbackContract,
-            extra.callbackSelector,
-            extra.trackDisputes,
-            extra.callbackGasLimit,
-            stateHash,
-            block.timestamp
-        );
     }
 
     function disputeAndSwap(uint256 reportId,address tokenToSwap,uint256 newAmount1,uint256 newAmount2,uint256 amt2Expected,bytes32 stateHash)
@@ -337,26 +284,6 @@ contract OpenOracle is ReentrancyGuard {
             disputeHistory[reportId][nextIndex].tokenToSwap = tokenToSwap;
             extraData[reportId].numReports = nextIndex + 1;
         }
-        emit ReportDisputed(
-            reportId,
-            disputer,
-            newAmount1,
-            newAmount2,
-            meta.token1,
-            meta.token2,
-            meta.feePercentage,
-            meta.protocolFee,
-            meta.settlementTime,
-            meta.disputeDelay,
-            meta.escalationHalt,
-            meta.timeType,
-            extraData[reportId].callbackContract,
-            extraData[reportId].callbackSelector,
-            extraData[reportId].trackDisputes,
-            extraData[reportId].callbackGasLimit,
-            stateHash,
-            block.timestamp
-        );
     }
 
     function _preValidate(uint256 newAmount1, uint256 oldAmount1, uint256 multiplier, uint256 escalationHalt) internal pure {
